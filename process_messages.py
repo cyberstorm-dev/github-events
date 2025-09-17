@@ -45,14 +45,47 @@ class GitHubEventProcessor:
             True if processing succeeded, False otherwise
         """
         try:
-            # Decode the message data
-            event_data = json.loads(message.data.decode('utf-8'))
+            # Log raw message info for debugging
+            logger.info(f"Message data type: {type(message.data)}, length: {len(message.data)}")
 
-            # Extract key information
+            # Try to decode the message data
+            try:
+                # First try direct UTF-8 decode
+                raw_data = message.data.decode('utf-8')
+                logger.info(f"Direct UTF-8 decode successful, length: {len(raw_data)}")
+            except UnicodeDecodeError:
+                # If that fails, the data might be binary - log the first few bytes
+                logger.error(f"UTF-8 decode failed. First 50 bytes: {message.data[:50]}")
+                return False
+
+            # Parse JSON
+            try:
+                event_data = json.loads(raw_data)
+                logger.info(f"JSON parse successful, type: {type(event_data)}")
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode failed: {e}. Raw data preview: {raw_data[:200]}")
+                return False
+
+            # Ensure event_data is a dictionary
+            if not isinstance(event_data, dict):
+                logger.error(f"Event data is not a dict, it's {type(event_data)}: {str(event_data)[:200]}")
+                return False
+
+            # Extract key information - add safety checks
+            if not hasattr(event_data, 'get'):
+                logger.error(f"event_data is not dict-like: {type(event_data)} = {str(event_data)[:200]}")
+                return False
+
             event_type = event_data.get('type', 'unknown')
             event_id = event_data.get('id', 'unknown')
             created_at = event_data.get('created_at', 'unknown')
-            repo_name = event_data.get('repo', {}).get('name', 'unknown')
+
+            # Safe repo name extraction
+            repo_info = event_data.get('repo', {})
+            if isinstance(repo_info, dict):
+                repo_name = repo_info.get('name', 'unknown')
+            else:
+                repo_name = 'unknown'
 
             # Log event details
             logger.info(f"Processing {event_type} event {event_id} from {repo_name}")
@@ -76,6 +109,8 @@ class GitHubEventProcessor:
             return False
         except Exception as e:
             logger.error(f"Error processing message: {e}")
+            logger.error(f"Message attributes: {message.attributes if hasattr(message, 'attributes') else 'None'}")
+            logger.error(f"Message data preview: {str(message.data)[:100] if hasattr(message, 'data') else 'No data'}")
             return False
 
     def _process_pull_request(self, event: Dict[str, Any]):
