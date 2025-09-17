@@ -1,0 +1,125 @@
+name: Deploy to GCP
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  PROJECT_ID: evm-attest
+  FUNCTION_NAME: github-events-etl
+  REGION: us-central1
+  PUBSUB_TOPIC_ID: github-events
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Verify authentication
+      run: gcloud auth list
+
+    - name: Enable required APIs
+      run: |
+        gcloud services enable cloudfunctions.googleapis.com
+        gcloud services enable cloudscheduler.googleapis.com
+        gcloud services enable pubsub.googleapis.com
+        gcloud services enable bigquery.googleapis.com
+
+    - name: Create service account for function (if not exists)
+      run: |
+        SERVICE_ACCOUNT_NAME="github-etl-sa"
+        if ! gcloud iam service-accounts describe ${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com --project=$PROJECT_ID 2>/dev/null; then
+          echo "Creating service account..."
+          gcloud iam service-accounts create $SERVICE_ACCOUNT_NAME \
+            --display-name="GitHub ETL Service Account" \
+            --description="Service account for GitHub Archive ETL Cloud Function" \
+            --project=$PROJECT_ID
+
+          # Grant necessary permissions
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+            --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role="roles/bigquery.dataViewer"
+
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+            --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role="roles/bigquery.jobUser"
+
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+            --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role="roles/pubsub.publisher"
+        else
+          echo "Service account already exists"
+        fi
+
+    - name: Create Pub/Sub topic (if not exists)
+      run: |
+        if ! gcloud pubsub topics describe $PUBSUB_TOPIC_ID --project=$PROJECT_ID 2>/dev/null; then
+          echo "Creating Pub/Sub topic..."
+          gcloud pubsub topics create $PUBSUB_TOPIC_ID --project=$PROJECT_ID
+        else
+          echo "Pub/Sub topic already exists"
+        fi
+
+    - name: Deploy Cloud Function
+      run: |
+        gcloud functions deploy $FUNCTION_NAME \
+          --gen2 \
+          --runtime=python311 \
+          --region=$REGION \
+          --source=. \
+          --entry-point=github_events_etl \
+          --trigger-http \
+          --allow-unauthenticated \
+          --service-account="github-etl-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+          --set-env-vars="PUBSUB_PROJECT_ID=$PROJECT_ID,PUBSUB_TOPIC_ID=$PUBSUB_TOPIC_ID" \
+          --memory=1Gi \
+          --timeout=540s
+
+    - name: Create/Update Cloud Scheduler job
+      run: |
+        FUNCTION_URL=$(gcloud functions describe $FUNCTION_NAME --region=$REGION --format="value(serviceConfig.uri)")
+        SCHEDULER_JOB_NAME="github-etl-hourly"
+
+        # Delete existing job if it exists
+        if gcloud scheduler jobs describe $SCHEDULER_JOB_NAME --location=$REGION 2>/dev/null; then
+          echo "Updating existing scheduler job..."
+          gcloud scheduler jobs delete $SCHEDULER_JOB_NAME --location=$REGION --quiet
+        fi
+
+        # Create new scheduler job
+        gcloud scheduler jobs create http $SCHEDULER_JOB_NAME \
+          --location=$REGION \
+          --schedule="0 * * * *" \
+          --uri=$FUNCTION_URL \
+          --http-method=POST \
+          --time-zone="UTC" \
+          --description="Hourly GitHub Archive ETL job"
+
+    - name: Test deployment
+      run: |
+        FUNCTION_URL=$(gcloud functions describe $FUNCTION_NAME --region=$REGION --format="value(serviceConfig.uri)")
+        echo "Testing function at: $FUNCTION_URL"
+        curl -X POST $FUNCTION_URL -w "\nStatus: %{http_code}\n"
