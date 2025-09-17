@@ -115,8 +115,18 @@ class GitHubEventProcessor:
 
     def _process_pull_request(self, event: Dict[str, Any]):
         """Process a Pull Request event."""
-        pr = event.get('payload', {}).get('pull_request', {})
-        action = event.get('payload', {}).get('action', 'unknown')
+        payload = event.get('payload', {})
+
+        # Handle case where payload is a JSON string
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse payload JSON string: {payload[:100]}...")
+                return
+
+        pr = payload.get('pull_request', {})
+        action = payload.get('action', 'unknown')
 
         logger.info(f"PR {action}: #{pr.get('number')} - {pr.get('title', 'No title')}")
 
@@ -129,8 +139,18 @@ class GitHubEventProcessor:
 
     def _process_issue(self, event: Dict[str, Any]):
         """Process an Issue event."""
-        issue = event.get('payload', {}).get('issue', {})
-        action = event.get('payload', {}).get('action', 'unknown')
+        payload = event.get('payload', {})
+
+        # Handle case where payload is a JSON string
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse payload JSON string: {payload[:100]}...")
+                return
+
+        issue = payload.get('issue', {})
+        action = payload.get('action', 'unknown')
 
         logger.info(f"Issue {action}: #{issue.get('number')} - {issue.get('title', 'No title')}")
 
@@ -138,8 +158,18 @@ class GitHubEventProcessor:
 
     def _process_release(self, event: Dict[str, Any]):
         """Process a Release event."""
-        release = event.get('payload', {}).get('release', {})
-        action = event.get('payload', {}).get('action', 'unknown')
+        payload = event.get('payload', {})
+
+        # Handle case where payload is a JSON string
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse payload JSON string: {payload[:100]}...")
+                return
+
+        release = payload.get('release', {})
+        action = payload.get('action', 'unknown')
 
         logger.info(f"Release {action}: {release.get('tag_name', 'No tag')} - {release.get('name', 'No name')}")
 
@@ -148,6 +178,15 @@ class GitHubEventProcessor:
     def _process_push(self, event: Dict[str, Any]):
         """Process a Push event."""
         payload = event.get('payload', {})
+
+        # Handle case where payload is a JSON string
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse payload JSON string: {payload[:100]}...")
+                return
+
         commits = payload.get('commits', [])
         ref = payload.get('ref', 'unknown')
 
@@ -240,7 +279,9 @@ class GitHubEventProcessor:
                 break
 
         logger.info(f"Processing complete: {total_processed} total processed, {total_failed} total failed")
-        return total_processed
+
+        # Return both counts so caller can decide success/failure
+        return total_processed, total_failed
 
 
 def main():
@@ -255,14 +296,21 @@ def main():
     processor = GitHubEventProcessor(project_id, subscription_id)
 
     try:
-        processed_count = processor.pull_and_process_all()
-        logger.info(f"✅ Successfully processed {processed_count} messages")
+        processed_count, failed_count = processor.pull_and_process_all()
 
         # Output for GitHub Actions
         print(f"PROCESSED_COUNT={processed_count}")
+        print(f"FAILED_COUNT={failed_count}")
+
+        if failed_count > 0:
+            failure_rate = failed_count / (processed_count + failed_count) * 100
+            logger.error(f"❌ Job failed: {failed_count} messages failed to process ({failure_rate:.1f}% failure rate)")
+            sys.exit(1)
+
+        logger.info(f"✅ Successfully processed {processed_count} messages with no failures")
 
     except Exception as e:
-        logger.error(f"❌ Processing failed: {e}")
+        logger.error(f"❌ Processing failed with exception: {e}")
         sys.exit(1)
 
 
