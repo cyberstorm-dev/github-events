@@ -40,7 +40,7 @@ class BigQueryClient:
         query = f"""
         SELECT * FROM `{table_name}`
         WHERE TRUE
-        AND type IN UNNEST(@event_types)
+        AND type IN ('PullRequestEvent', 'IssuesEvent', 'ReleaseEvent', 'PushEvent')
         AND created_at >= @min_timestamp
         AND created_at < @max_timestamp
         ORDER BY created_at ASC
@@ -49,7 +49,6 @@ class BigQueryClient:
         # Configure query parameters
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
-                bigquery.ArrayQueryParameter("event_types", "STRING", Config.EVENT_TYPES),
                 bigquery.ScalarQueryParameter("min_timestamp", "TIMESTAMP", min_timestamp),
                 bigquery.ScalarQueryParameter("max_timestamp", "TIMESTAMP", max_timestamp),
             ]
@@ -90,14 +89,13 @@ class BigQueryClient:
         SELECT COUNT(*) as row_count
         FROM `{table_name}`
         WHERE TRUE
-        AND type IN UNNEST(@event_types)
+        AND type IN ('PullRequestEvent', 'IssuesEvent', 'ReleaseEvent', 'PushEvent')
         AND created_at >= @min_timestamp
         AND created_at < @max_timestamp
         """
 
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
-                bigquery.ArrayQueryParameter("event_types", "STRING", Config.EVENT_TYPES),
                 bigquery.ScalarQueryParameter("min_timestamp", "TIMESTAMP", min_timestamp),
                 bigquery.ScalarQueryParameter("max_timestamp", "TIMESTAMP", max_timestamp),
             ]
