@@ -109,14 +109,14 @@ jobs:
           gcloud scheduler jobs delete $SCHEDULER_JOB_NAME --location=$REGION --quiet
         fi
 
-        # Create new scheduler job
+        # Create new scheduler job (runs at :00 past every hour)
         gcloud scheduler jobs create http $SCHEDULER_JOB_NAME \
           --location=$REGION \
           --schedule="0 * * * *" \
           --uri=$FUNCTION_URL \
           --http-method=POST \
           --time-zone="UTC" \
-          --description="Hourly GitHub Archive ETL job"
+          --description="Hourly GitHub Archive ETL job - Process 1: BQ to Pub/Sub"
 
     - name: Test deployment
       run: |

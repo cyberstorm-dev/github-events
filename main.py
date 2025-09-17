@@ -19,6 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+
 @functions_framework.http
 def github_events_etl(request: Request) -> Dict[str, Any]:
     """

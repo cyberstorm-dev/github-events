@@ -1,0 +1,80 @@
+name: Process GitHub Events (Hourly)
+
+on:
+  schedule:
+    # Run every hour at minute 15 (gives 15 minutes for Process 1 to complete)
+    - cron: '15 * * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+env:
+  PROJECT_ID: evm-attest
+  PUBSUB_TOPIC_ID: github-events
+  SUBSCRIPTION_ID: github-events-processor
+
+jobs:
+  process-events:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Create subscription if not exists
+      run: |
+        if ! gcloud pubsub subscriptions describe $SUBSCRIPTION_ID --project=$PROJECT_ID 2>/dev/null; then
+          echo "Creating Pub/Sub subscription..."
+          gcloud pubsub subscriptions create $SUBSCRIPTION_ID \
+            --topic=$PUBSUB_TOPIC_ID \
+            --project=$PROJECT_ID \
+            --ack-deadline=60 \
+            --message-retention-duration=7d
+        else
+          echo "Subscription already exists"
+        fi
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      run: |
+        pip install google-cloud-pubsub
+
+    - name: Process messages with Python
+      env:
+        PROJECT_ID: ${{ env.PROJECT_ID }}
+        SUBSCRIPTION_ID: ${{ env.SUBSCRIPTION_ID }}
+        GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-key.json
+      run: |
+        # Write service account key for Python client
+        echo '${{ secrets.GCP_SA_KEY }}' > ${{ runner.temp }}/gcp-key.json
+
+        # Run the Python processor
+        python process_messages.py
+
+    - name: Report results
+      run: |
+        echo "✅ Process 2 completed"
+        echo "📊 Messages processed: ${{ env.message_count }}"
+        echo "🕐 Processing time: $(date)"
+
+        # Add your custom processing logic here
+        # Examples:
+        # - Parse GitHub events
+        # - Store in database
+        # - Send to another system
+        # - Generate reports
