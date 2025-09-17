@@ -70,6 +70,13 @@ jobs:
           gcloud projects add-iam-policy-binding $PROJECT_ID \
             --member="serviceAccount:${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
             --role="roles/pubsub.publisher"
+
+          # Allow CI/CD service account to act as this service account
+          gcloud iam service-accounts add-iam-policy-binding ${SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com \
+            --member="serviceAccount:cicd-github-bq-pubsub@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role="roles/iam.serviceAccountUser" \
+            --project=$PROJECT_ID
+
         else
           echo "Service account already exists"
         fi

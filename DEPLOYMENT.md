@@ -35,6 +35,8 @@ cat gcp-sa-key.json
   - Pub/Sub Admin
   - Service Account Admin
   - Service Usage Admin
+- **Additional Permissions**:
+  - `roles/iam.serviceAccountUser` on `github-etl-sa@evm-attest.iam.gserviceaccount.com` (allows acting as the function's service account)
 
 ### Function Service Account (created by workflow)
 - **Name**: `github-etl-sa@evm-attest.iam.gserviceaccount.com`
