@@ -43,6 +43,7 @@ class BigQueryClient:
         AND type IN ('PullRequestEvent', 'IssuesEvent', 'ReleaseEvent', 'PushEvent')
         AND created_at >= @min_timestamp
         AND created_at < @max_timestamp
+        AND repo.name IN (SELECT repository FROM `evm-attest.cyberstorm.github_repositories`)
         ORDER BY created_at ASC
         """
 
@@ -92,6 +93,7 @@ class BigQueryClient:
         AND type IN ('PullRequestEvent', 'IssuesEvent', 'ReleaseEvent', 'PushEvent')
         AND created_at >= @min_timestamp
         AND created_at < @max_timestamp
+        AND repo.name IN (SELECT repository FROM `evm-attest.cyberstorm.github_repositories`)
         """
 
         job_config = bigquery.QueryJobConfig(
